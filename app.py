@@ -1,4 +1,5 @@
 from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 import sqlite3
 from datetime import datetime
 import firebase_admin
@@ -7,14 +8,13 @@ import os
 import json
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
+app.secret_key = "tu_clave_secreta_123"  # Necesaria para guardar el lote en sesión
 
 # Firebase - usa variable de entorno en Render, archivo local en tu PC
 if os.getenv("FIREBASE_CREDENTIALS"):
-    # Render: lee desde variable de entorno
     cred_dict = json.loads(os.getenv("FIREBASE_CREDENTIALS"))
     cred = credentials.Certificate(cred_dict)
 else:
-    # Local: usa el archivo JSON en tu carpeta
     cred = credentials.Certificate("barrioseguro-dca9a-firebase-adminsdk-fbsvc-7e07d9aae4.json")
 
 firebase_admin.initialize_app(cred)
@@ -68,7 +68,7 @@ def enviar_push(titulo, cuerpo):
     con.close()
 
     if not tokens:
-        print("No hay tokens para enviar push")
+        print("No hay tokens para push")
         return
 
     message = messaging.MulticastMessage(
@@ -93,16 +93,34 @@ def menu_principal():
 def guardia():
     if request.method == "POST":
         password = request.form.get("password")
-        if password == "guardia123":  # ← CAMBIA ESTA CONTRASEÑA POR LA QUE QUERÉS
+        if password == "guardia123":  # ← CAMBIA ESTA CONTRASEÑA
             return render_template("mapa.html")
         else:
             return render_template("login.html", error="Contraseña incorrecta")
 
     return render_template("login.html", error="")
 
-@app.route("/vecinos")
+@app.route("/vecinos", methods=["GET", "POST"])
 def vecinos():
-    return render_template("sistema2.html")
+    # Si ya tiene lote en sesión, entra directo
+    if 'mi_lote' in session:
+        return render_template("sistema2.html", mi_lote=session['mi_lote'])
+
+    # Si es POST (envió el formulario), valida el lote
+    if request.method == "POST":
+        mi_lote = request.form.get("mi_lote")
+        try:
+            mi_lote = int(mi_lote)
+            if 1 <= mi_lote <= 68:
+                session['mi_lote'] = mi_lote
+                return render_template("sistema2.html", mi_lote=mi_lote)
+            else:
+                return render_template("lote_login.html", error="Lote inválido (1-68)")
+        except ValueError:
+            return render_template("lote_login.html", error="Ingresa un número válido")
+
+    # Si no tiene lote, muestra la pantalla de login
+    return render_template("lote_login.html", error="")
 
 @app.route("/estado")
 def estado():
@@ -122,10 +140,11 @@ def disparar_alarma(lote):
 
     if estado == "NORMAL":
         cur.execute("UPDATE lotes SET estado='ALARMA' WHERE lote=?", (lote,))
+        desde = f" (desde lote {session.get('mi_lote', 'desconocido')})" if 'mi_lote' in session else ""
         cur.execute("INSERT INTO eventos (lote, tipo, fecha_hora) VALUES (?, ?, ?)",
-                    (lote, "ALARMA_DISPARADA", datetime.now().isoformat()))
+                    (lote, f"ALARMA_DISPARADA{desde}", datetime.now().isoformat()))
         con.commit()
-        enviar_push("🚨 Alarma activada", f"Lote {lote} en peligro")
+        enviar_push("🚨 Alarma activada", f"Lote {lote} en peligro{desde}")
 
     con.close()
     return "OK"
@@ -173,14 +192,15 @@ def mensaje():
     if not lote or not texto:
         return jsonify({"error": "Faltan datos"}), 400
 
+    desde = f" (desde lote {session.get('mi_lote', 'desconocido')})" if 'mi_lote' in session else ""
+    texto_completo = texto + desde
     con = conectar_db()
     cur = con.cursor()
     cur.execute("INSERT INTO eventos (lote, tipo, fecha_hora) VALUES (?, ?, ?)",
-                (lote, f"REPORTE_VECINO: {texto}", datetime.now().isoformat()))
+                (lote, f"REPORTE_VECINO: {texto_completo}", datetime.now().isoformat()))
     con.commit()
     con.close()
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
     app.run(debug=True, host="0.0.0.0", port=5000)

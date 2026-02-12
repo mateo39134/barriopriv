@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema 2 - Vecinos</title>
+  <style>
+    body { background:#000; color:#fff; font-family:Arial; text-align:center; padding:20px; margin:0; }
+    h1 { font-size:2rem; margin:20px 0; }
+    label { font-size:1.3rem; display:block; margin:15px 0 5px; }
+    input[type="number"] { font-size:1.8rem; padding:12px; width:120px; text-align:center; border-radius:8px; border:2px solid #444; background:#111; color:white; }
+    .btn { font-size:1.5rem; padding:15px; margin:15px auto; width:90%; max-width:400px; border:none; border-radius:10px; color:white; cursor:pointer; }
+    #activar { background:#c00; box-shadow:0 0 15px #c00; }
+    #activar:disabled { background:#600; cursor:not-allowed; }
+    #reportar { background:#444; }
+    #llamar911 { background:#ff6600; box-shadow:0 0 15px #ff6600; }
+    #msg, #estado { font-size:1.2rem; margin:20px 0; min-height:40px; }
+    textarea { width:90%; max-width:400px; height:80px; padding:10px; font-size:1rem; border-radius:8px; border:2px solid #444; background:#111; color:white; margin:10px auto; display:block; }
+    #mapa-container { position: relative; height: 300px; width: 90%; margin: 20px auto; overflow: hidden; border: 2px solid #444; border-radius: 8px; }
+    #plano-vecinos { width: 100%; height: 100%; object-fit: contain; }
+    .lote-vecinos { position: absolute; width: 20px; height: 20px; background: lime; border-radius: 50%; transform: translate(-50%, -50%); font-size: 10px; color: black; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+    .lote-vecinos.alarma { background: red; color: white; }
+  </style>
+</head>
+<body>
+
+<h1>🚨 Sistema 2 - Vecinos</h1>
+
+<label for="mi-lote">Tu lote (1-68):</label>
+<input type="number" id="mi-lote" min="1" max="68" placeholder="Ej: 15">
+
+<div id="mapa-container">
+  <img id="plano-vecinos" src="static/plano.jpg">
+</div>
+
+<div id="estado"></div>
+
+<button id="activar" class="btn">🚨 Activar alarma</button>
+<button id="reportar" class="btn">📩 Reportar problema</button>
+<textarea id="texto" placeholder="Describí el problema..."></textarea>
+<button id="llamar911" class="btn">📞 Llamar al 911</button>
+
+<div id="msg"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+  import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-messaging.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDum99yuqqpF7Q0RG283nUCKnWEQbpJpUA",
+    authDomain: "barrioseguro-dca9a.firebaseapp.com",
+    projectId: "barrioseguro-dca9a",
+    storageBucket: "barrioseguro-dca9a.firebasestorage.app",
+    messagingSenderId: "903780475230",
+    appId: "1:903780475230:web:b238c79487ce60e211afcf",
+    measurementId: "G-EBZ18J3SP2"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const messaging = getMessaging(app);
+
+  Notification.requestPermission().then(permission => {
+    if (permission === "granted") {
+      getToken(messaging, { vapidKey: "BEJzOGJj3XPThug_BUBYc9OCh3DdCT-cb2D-Sy3If_TUv4hAtIiyDer-kRM6OyflDuQnyu5TD63Ps916KUYp7EY" }).then(token => {
+        if (token) {
+          fetch("/guardar-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token })
+          });
+        }
+      });
+    }
+  });
+
+  onMessage(messaging, payload => {
+    const title = payload.notification.title;
+    const body = payload.notification.body;
+    new Notification(title, { body });
+    document.getElementById("msg").innerHTML = `<b>${title}</b><br>${body}`;
+  });
+
+  const miLoteInput = document.getElementById("mi-lote");
+  const btnActivar = document.getElementById("activar");
+  const btnReportar = document.getElementById("reportar");
+  const texto = document.getElementById("texto");
+  const msg = document.getElementById("msg");
+  const estado = document.getElementById("estado");
+  const mapaContainer = document.getElementById("mapa-container");
+  let miLote = null;
+
+  miLoteInput.onchange = () => {
+    miLote = parseInt(miLoteInput.value);
+    if (miLote && miLote >= 1 && miLote <= 68) {
+      msg.innerHTML = `Tu lote registrado: ${miLote}`;
+    } else {
+      msg.innerHTML = "Lote inválido";
+      miLote = null;
+    }
+  };
+
+  // Cargar mapa con lotes (versión simplificada para Sistema 2)
+  fetch("/estado")
+    .then(r => r.json())
+    .then(estados => {
+      lotes.forEach(lote => {
+        const punto = document.createElement("div");
+        punto.className = "lote-vecinos";
+        punto.style.left = lote.x + "px";
+        punto.style.top = lote.y + "px";
+        punto.textContent = lote.id;
+        if (estados[lote.id] === "ALARMA") punto.classList.add("alarma");
+        mapaContainer.appendChild(punto);
+      });
+    });
+
+  btnActivar.onclick = async () => {
+    const num = prompt("Número de lote a activar (1-68):");
+    if (!num || isNaN(num) || num < 1 || num > 68) return;
+    await fetch(`/alarma/${num}`, { method: "POST" });
+    msg.innerHTML = `Alarma activada en lote ${num}` + (miLote ? ` desde mi lote ${miLote}` : "");
+  };
+
+  btnReportar.onclick = async () => {
+    const num = prompt("Número de lote relacionado (1-68):");
+    const txt = texto.value.trim();
+    if (!num || isNaN(num) || num < 1 || num > 68 || !txt) return;
+    await fetch("/mensaje", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lote: num, texto: txt + (miLote ? ` (desde lote ${miLote})` : "") })
+    });
+    msg.innerHTML = `Reporte enviado`;
+    texto.value = "";
+  };
+
+  document.getElementById("llamar911").onclick = () => {
+    window.location.href = "tel:911";
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema 1 - Guardia</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: black;
+      font-family: Arial, sans-serif;
+    }
+
+    #contenedor {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #plano {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      min-width: 100%;
+      min-height: 100%;
+      transform: translate(-50%, -50%);
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .lote {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      background: lime;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: bold;
+      color: black;
+      box-shadow: 0 0 4px rgba(0,0,0,0.6);
+    }
+
+    .lote.alarma {
+      background: red;
+      color: white;
+      animation: parpadeo 1s infinite;
+    }
+
+    .lote.verificado {
+      background: gray;
+      animation: none;
+    }
+
+    @keyframes parpadeo {
+      50% { opacity: 0.4; }
+    }
+
+    #panel {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      width: 340px;
+      max-height: 70vh;
+      background: rgba(0,0,0,0.85);
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      z-index: 100;
+      overflow-y: auto;
+      font-size: 13px;
+      box-shadow: 0 0 15px rgba(255,0,0,0.3);
+    }
+
+    #reportes-bar {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      width: 340px;
+      max-height: 70vh;
+      background: rgba(0,0,0,0.85);
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      z-index: 100;
+      overflow-y: auto;
+      font-size: 13px;
+      box-shadow: 0 0 15px rgba(0,255,0,0.3);
+    }
+
+    #panel h3, #reportes-bar h3 {
+      margin: 0 0 10px;
+    }
+
+    #panel ul, #reportes-bar ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    #panel li, #reportes-bar li {
+      padding: 6px 0;
+      border-bottom: 1px solid #333;
+    }
+
+    #panel li.alerta {
+      color: #ff4444;
+      font-weight: bold;
+    }
+
+    #reportes-bar li {
+      color: #44ff44;
+    }
+
+    .boton-top {
+      position: absolute;
+      top: 10px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      z-index: 100;
+      font-size: 14px;
+      color: white;
+    }
+
+    #silenciar {
+      left: 10px;
+      background: #333;
+    }
+
+    #llamar911 {
+      left: 180px;
+      background: #c00;
+      font-weight: bold;
+      box-shadow: 0 0 10px rgba(255,0,0,0.7);
+    }
+
+    #volver {
+      right: 10px;
+      background: #444;
+    }
+
+    #silenciar:hover, #llamar911:hover, #volver:hover {
+      background: #555;
+    }
+  </style>
+</head>
+
+<body>
+
+<button id="silenciar" class="boton-top">🔇 Silenciar sonido</button>
+<button id="llamar911" class="boton-top">🚨 Llamar al 911</button>
+<button id="volver" class="boton-top">← Volver al menú</button>
+
+<div id="contenedor">
+  <img id="plano" src="static/plano.jpg">
+</div>
+
+<div id="panel">
+  <h3>Alarmas Activas (0)</h3>
+  <ul id="activas"></ul>
+  <h3>Historial Reciente</h3>
+  <ul id="historial"></ul>
+</div>
+
+<div id="reportes-bar">
+  <h3>Reportes Vecinos</h3>
+  <ul id="reportes"></ul>
+</div>
+
+<audio id="sonido" src="static/alarma.mp3" loop></audio>
+
+<script src="static/lotes.js"></script>
+
+<script>
+  const contenedor = document.getElementById("contenedor");
+  const sonido = document.getElementById("sonido");
+  const btnSilenciar = document.getElementById("silenciar");
+  const btnLlamar911 = document.getElementById("llamar911");
+  const btnVolver = document.getElementById("volver");
+  const listaActivas = document.getElementById("activas");
+  const listaHistorial = document.getElementById("historial");
+  const listaReportes = document.getElementById("reportes");
+  let sonidoSilenciado = false;
+  let alarmasActivas = 0;
+
+  // Volver al menú
+  btnVolver.onclick = () => {
+    window.location.href = "/";
+  };
+
+  // Llamar al 911
+  btnLlamar911.onclick = () => {
+    window.location.href = "tel:911";
+  };
+
+  // Silenciar sonido
+  btnSilenciar.onclick = () => {
+    sonidoSilenciado = !sonidoSilenciado;
+    btnSilenciar.textContent = sonidoSilenciado ? "🔊 Activar sonido" : "🔇 Silenciar sonido";
+    if (sonidoSilenciado) {
+      sonido.pause();
+    } else {
+      ajustarVolumen();
+    }
+  };
+
+  function ajustarVolumen() {
+    const volumen = alarmasActivas === 0 ? 0.3 : alarmasActivas > 1 ? 0.9 : 0.6;
+    sonido.volume = volumen;
+
+    if (sonidoSilenciado || alarmasActivas === 0) {
+      sonido.pause();
+    } else {
+      sonido.currentTime = 0;
+      sonido.play().catch(() => {});
+    }
+  }
+
+  // Cargar lotes
+  fetch("/estado")
+    .then(r => r.json())
+    .then(estados => {
+      lotes.forEach(lote => {
+        crearLote(lote.id, lote.x, lote.y, estados[lote.id] || "NORMAL");
+      });
+      actualizarTodo();
+    });
+
+  setInterval(actualizarTodo, 3000);
+
+  function crearLote(id, x, y, estadoInicial) {
+    const punto = document.createElement("div");
+    punto.className = "lote";
+    punto.dataset.id = id;
+    punto.dataset.estado = estadoInicial;
+
+    punto.style.left = x + "px";
+    punto.style.top = y + "px";
+
+    punto.textContent = id;
+
+    if (estadoInicial === "ALARMA") punto.classList.add("alarma");
+
+    punto.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (punto.dataset.estado === "ALARMA") return;
+
+      fetch(`/alarma/${id}`, { method: "POST" })
+        .then(r => {
+          if (r.ok) {
+            punto.dataset.estado = "ALARMA";
+            punto.classList.add("alarma");
+            actualizarTodo();
+            ajustarVolumen();
+          }
+        });
+    });
+
+    punto.addEventListener("dblclick", function (ev) {
+      ev.stopPropagation();
+
+      fetch(`/reset/${id}`, { method: "POST" })
+        .then(r => {
+          if (r.ok) {
+            punto.dataset.estado = "NORMAL";
+            punto.classList.remove("alarma");
+            punto.classList.add("verificado");
+            setTimeout(() => punto.classList.remove("verificado"), 3000);
+            actualizarTodo();
+            ajustarVolumen();
+          }
+        });
+    });
+
+    contenedor.appendChild(punto);
+  }
+
+  function actualizarTodo() {
+    fetch("/estado")
+      .then(r => r.json())
+      .then(estados => {
+        const activas = Object.entries(estados)
+          .filter(([_, e]) => e === "ALARMA")
+          .map(([id]) => id);
+
+        listaActivas.innerHTML = activas.length === 0
+          ? "<li>No hay alarmas activas</li>"
+          : activas.map(id => `<li class="alerta">Lote ${id} - Activa</li>`).join("");
+
+        document.querySelector("#panel h3").textContent = `Alarmas Activas (${activas.length})`;
+      });
+
+    fetch("/eventos")
+      .then(r => r.json())
+      .then(eventos => {
+        const historial = eventos.filter(ev => !ev[1].startsWith("REPORTE_VECINO"));
+        listaHistorial.innerHTML = historial.slice(0, 10).map(ev => {
+          const [lote, tipo, fecha] = ev;
+          const hora = new Date(fecha).toLocaleTimeString('es-AR');
+          return `<li>${hora} - Lote ${lote} - ${tipo.replace('_', ' ')}</li>`;
+        }).join("") || "<li>No hay eventos recientes</li>";
+
+        const reportes = eventos.filter(ev => ev[1].startsWith("REPORTE_VECINO"));
+        listaReportes.innerHTML = reportes.slice(0, 10).map(ev => {
+          const [lote, tipo, fecha] = ev;
+          const hora = new Date(fecha).toLocaleTimeString('es-AR');
+          const mensaje = tipo.replace("REPORTE_VECINO: ", "");
+          return `<li>${hora} - Lote ${lote} - ${mensaje}</li>`;
+        }).join("") || "<li>No hay reportes de vecinos</li>";
+      });
+  }
+</script>
+
+</body>
+</html>

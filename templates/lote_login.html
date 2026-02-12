@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acceso - Vecinos</title>
+  <style>
+    body { background:#000; color:#fff; font-family:Arial; text-align:center; padding:100px 20px; }
+    h1 { font-size:2rem; }
+    input { font-size:1.5rem; padding:12px; width:250px; margin:20px; }
+    button { font-size:1.5rem; padding:15px 40px; background:#00cc00; color:white; border:none; border-radius:8px; cursor:pointer; }
+    #error { color:red; font-size:1.2rem; margin-top:20px; }
+  </style>
+</head>
+<body>
+
+<h1>Acceso al Sistema 2 - Vecinos</h1>
+
+<form method="POST">
+  <input type="number" name="mi_lote" min="1" max="68" placeholder="Tu lote (1-68)" required>
+  <button type="submit">Entrar</button>
+</form>
+
+{% if error %}
+  <div id="error">{{ error }}</div>
+{% endif %}
+
+</body>
+</html>

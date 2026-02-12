@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Barrio Seguro - Vecinos</title>
+  <style>
+    body { background:#000; color:#fff; font-family:Arial; text-align:center; padding:20px; margin:0; }
+    h1 { font-size:2rem; margin:20px 0; }
+    label { font-size:1.3rem; display:block; margin:15px 0 5px; }
+    input[type="number"] { font-size:1.8rem; padding:12px; width:120px; text-align:center; border-radius:8px; border:2px solid #444; background:#111; color:white; }
+    .btn { font-size:1.5rem; padding:15px; margin:15px auto; width:90%; max-width:400px; border:none; border-radius:10px; color:white; cursor:pointer; }
+    #activar { background:#c00; box-shadow:0 0 15px #c00; }
+    #activar:disabled { background:#600; cursor:not-allowed; }
+    #reportar { background:#444; }
+    #llamar911 { background:#ff6600; box-shadow:0 0 15px #ff6600; }
+    #msg, #estado { font-size:1.2rem; margin:20px 0; min-height:40px; }
+    textarea { width:90%; max-width:400px; height:80px; padding:10px; font-size:1rem; border-radius:8px; border:2px solid #444; background:#111; color:white; margin:10px auto; display:block; }
+    #volver { position: absolute; top: 10px; right: 10px; background: #444; color:white; border:none; border-radius:8px; padding:10px; cursor:pointer; }
+    #volver:hover { background: #555; }
+    #mi-lote-info { font-size:1.2rem; color:lime; margin:10px; }
+  </style>
+</head>
+<body>
+
+<button id="volver">← Volver al menú</button>
+
+<h1>🚨 Barrio Seguro</h1>
+
+<div id="mi-lote-info">Tu lote registrado: {{ session.mi_lote if session.mi_lote else 'No registrado' }}</div>
+
+<label for="lote">Lote a reportar/activar (1-68):</label>
+<input type="number" id="lote" min="1" max="68" placeholder="Ej: 15">
+
+<div id="estado"></div>
+
+<button id="activar" class="btn">🚨 Activar alarma</button>
+<button id="reportar" class="btn">📩 Reportar problema</button>
+<textarea id="texto" placeholder="Describí qué pasa..."></textarea>
+<button id="llamar911" class="btn">📞 Llamar al 911</button>
+
+<div id="msg"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+  import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-messaging.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDum99yuqqpF7Q0RG283nUCKnWEQbpJpUA",
+    authDomain: "barrioseguro-dca9a.firebaseapp.com",
+    projectId: "barrioseguro-dca9a",
+    storageBucket: "barrioseguro-dca9a.firebasestorage.app",
+    messagingSenderId: "903780475230",
+    appId: "1:903780475230:web:b238c79487ce60e211afcf",
+    measurementId: "G-EBZ18J3SP2"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const messaging = getMessaging(app);
+
+  Notification.requestPermission().then(permission => {
+    if (permission === "granted") {
+      getToken(messaging, { vapidKey: "BEJzOGJj3XPThug_BUBYc9OCh3DdCT-cb2D-Sy3If_TUv4hAtIiyDer-kRM6OyflDuQnyu5TD63Ps916KUYp7EY" }).then(token => {
+        if (token) {
+          fetch("/guardar-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token })
+          }).then(() => {
+            document.getElementById("msg").innerHTML = "Notificaciones activadas";
+          });
+        }
+      });
+    }
+  });
+
+  onMessage(messaging, payload => {
+    const title = payload.notification.title;
+    const body = payload.notification.body;
+    new Notification(title, { body });
+    document.getElementById("msg").innerHTML = `<b>${title}</b><br>${body}`;
+  });
+
+  document.getElementById("volver").onclick = () => {
+    window.location.href = "/";
+  };
+
+  const loteInput = document.getElementById("lote");
+  const btnActivar = document.getElementById("activar");
+  const btnReportar = document.getElementById("reportar");
+  const texto = document.getElementById("texto");
+  const msg = document.getElementById("msg");
+  const estado = document.getElementById("estado");
+
+  loteInput.onchange = async () => {
+    const num = loteInput.value;
+    if (!num || num < 1 || num > 68) return;
+    const res = await fetch("/estado");
+    const estados = await res.json();
+    const est = estados[num] || "NORMAL";
+    estado.innerHTML = est === "ALARMA" 
+      ? `<span style="color:red">🚨 Lote ${num} en alarma</span>`
+      : `<span style="color:lime">✅ Lote ${num} tranquilo</span>`;
+    btnActivar.disabled = est === "ALARMA";
+  };
+
+  btnActivar.onclick = async () => {
+    const num = loteInput.value;
+    if (!num) return;
+    await fetch(`/alarma/${num}`, { method: "POST" });
+    msg.innerHTML = `Alarma activada en lote ${num}`;
+    btnActivar.disabled = true;
+  };
+
+  btnReportar.onclick = async () => {
+    const num = loteInput.value;
+    const txt = texto.value.trim();
+    if (!num || !txt) return;
+    await fetch("/mensaje", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lote: num, texto: txt })
+    });
+    msg.innerHTML = `Reporte enviado`;
+    texto.value = "";
+  };
+
+  document.getElementById("llamar911").onclick = () => {
+    window.location.href = "tel:911";
+  };
+</script>
+</body>
+</html>

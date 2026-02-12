@@ -1,15 +1,22 @@
-from flask import Flask, render_template, jsonify, request, session
+from flask import Flask, render_template, jsonify, request
 import sqlite3
 from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, messaging
+import os
+import json
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
-app.secret_key = "tu_clave_secreta_123"  # Necesaria para sesiones
 
-SERVICE_ACCOUNT_JSON = "barrioseguro-dca9a-firebase-adminsdk-fbsvc-7e07d9aae4.json"
+# Firebase - usa variable de entorno en Render, archivo local en tu PC
+if os.getenv("FIREBASE_CREDENTIALS"):
+    # Render: lee desde variable de entorno
+    cred_dict = json.loads(os.getenv("FIREBASE_CREDENTIALS"))
+    cred = credentials.Certificate(cred_dict)
+else:
+    # Local: usa el archivo JSON en tu carpeta
+    cred = credentials.Certificate("barrioseguro-dca9a-firebase-adminsdk-fbsvc-7e07d9aae4.json")
 
-cred = credentials.Certificate(SERVICE_ACCOUNT_JSON)
 firebase_admin.initialize_app(cred)
 
 DB = "eventos.db"
@@ -61,7 +68,7 @@ def enviar_push(titulo, cuerpo):
     con.close()
 
     if not tokens:
-        print("No hay tokens para push")
+        print("No hay tokens para enviar push")
         return
 
     message = messaging.MulticastMessage(
@@ -73,10 +80,10 @@ def enviar_push(titulo, cuerpo):
     )
 
     try:
-        messaging.send_multicast(message)
-        print("Push enviado")
+        response = messaging.send_multicast(message)
+        print(f"Push enviado: {response.success_count} ok, {response.failure_count} fallos")
     except Exception as e:
-        print("Error push:", e)
+        print("Error al enviar push:", e)
 
 @app.route("/")
 def menu_principal():
@@ -86,26 +93,16 @@ def menu_principal():
 def guardia():
     if request.method == "POST":
         password = request.form.get("password")
-        if password == "guardia123":  # ← CAMBIA ESTA CONTRASEÑA
+        if password == "guardia123":  # ← CAMBIA ESTA CONTRASEÑA POR LA QUE QUERÉS
             return render_template("mapa.html")
         else:
             return render_template("login.html", error="Contraseña incorrecta")
 
     return render_template("login.html", error="")
 
-@app.route("/vecinos", methods=["GET", "POST"])
+@app.route("/vecinos")
 def vecinos():
-    if request.method == "POST":
-        mi_lote = request.form.get("mi_lote")
-        if mi_lote and 1 <= int(mi_lote) <= 68:
-            session['mi_lote'] = int(mi_lote)
-            return render_template("sistema2.html")
-        else:
-            return render_template("lote_login.html", error="Lote inválido (1-68)")
-
-    if 'mi_lote' in session:
-        return render_template("sistema2.html")
-    return render_template("lote_login.html", error="")
+    return render_template("sistema2.html")
 
 @app.route("/estado")
 def estado():
@@ -125,9 +122,8 @@ def disparar_alarma(lote):
 
     if estado == "NORMAL":
         cur.execute("UPDATE lotes SET estado='ALARMA' WHERE lote=?", (lote,))
-        tipo = "ALARMA_DISPARADA" + (f" (desde lote {session.get('mi_lote', 'desconocido')})" if 'mi_lote' in session else "")
         cur.execute("INSERT INTO eventos (lote, tipo, fecha_hora) VALUES (?, ?, ?)",
-                    (lote, tipo, datetime.now().isoformat()))
+                    (lote, "ALARMA_DISPARADA", datetime.now().isoformat()))
         con.commit()
         enviar_push("🚨 Alarma activada", f"Lote {lote} en peligro")
 
@@ -177,14 +173,14 @@ def mensaje():
     if not lote or not texto:
         return jsonify({"error": "Faltan datos"}), 400
 
-    texto_completo = texto + (f" (desde lote {session.get('mi_lote', 'desconocido')})" if 'mi_lote' in session else "")
     con = conectar_db()
     cur = con.cursor()
     cur.execute("INSERT INTO eventos (lote, tipo, fecha_hora) VALUES (?, ?, ?)",
-                (lote, f"REPORTE_VECINO: {texto_completo}", datetime.now().isoformat()))
+                (lote, f"REPORTE_VECINO: {texto}", datetime.now().isoformat()))
     con.commit()
     con.close()
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)
     app.run(debug=True, host="0.0.0.0", port=5000)
